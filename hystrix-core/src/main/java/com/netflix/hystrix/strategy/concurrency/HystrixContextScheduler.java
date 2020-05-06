@@ -65,6 +65,7 @@ public class HystrixContextScheduler extends Scheduler {
 
     @Override
     public Worker createWorker() {
+        //Rxjava里的东东，执行任务要给个worker
         return new HystrixContextSchedulerWorker(actualScheduler.createWorker());
     }
 
@@ -120,6 +121,7 @@ public class HystrixContextScheduler extends Scheduler {
 
         @Override
         public Worker createWorker() {
+            //踏马的要封多少层
             return new ThreadPoolWorker(threadPool, shouldInterruptThread);
         }
 
@@ -147,6 +149,7 @@ public class HystrixContextScheduler extends Scheduler {
 
         @Override
         public void unsubscribe() {
+            //这里对超时检测线程怎么和worker互动的不是很清楚，哪里会调用这个方法呢？onError时自动调用？
             subscription.unsubscribe();
         }
 
@@ -157,12 +160,14 @@ public class HystrixContextScheduler extends Scheduler {
 
         @Override
         public Subscription schedule(final Action0 action) {
+            //work的执行入口，理解为runnable的run()就好
             if (subscription.isUnsubscribed()) {
                 // don't schedule, we are unsubscribed
                 return Subscriptions.unsubscribed();
             }
 
             // This is internal RxJava API but it is too useful.
+            //神奇的东东，猜测应该是sa被取消订阅时，add的所有Subscription都会执行unsubscribe吧
             ScheduledAction sa = new ScheduledAction(action);
 
             subscription.add(sa);
@@ -197,7 +202,9 @@ public class HystrixContextScheduler extends Scheduler {
 
         @Override
         public void unsubscribe() {
+            //如果还没开始，从队列中删除
             executor.remove(f);
+            //根据情况给予中断
             if (shouldInterruptThread.call()) {
                 f.cancel(true);
             } else {

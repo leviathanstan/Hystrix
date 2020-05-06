@@ -128,6 +128,7 @@ public class RequestCollapserFactory<BatchReturnType, ResponseType, RequestArgum
     /* we are casting because the Map needs to be <?, ?> but we know it is <ReturnType, RequestArgumentType> for this thread */
     @SuppressWarnings("unchecked")
     private RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType> getCollapserForUserRequest(HystrixCollapserBridge<BatchReturnType, ResponseType, RequestArgumentType> commandCollapser) {
+        //关键是最后那个get()，调用的是HystrixRequestVariableHolder，和缓存实现时需要设置上下文差不多的原理。最后的结果：每个线程一份RequestCollapser
         return (RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType>) getRequestVariableForCommand(commandCollapser).get(concurrencyStrategy);
     }
 

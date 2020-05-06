@@ -1,0 +1,39 @@
+@startuml
+title AbstractCommand#handleCommandEnd()
+
+participant AbstractCommand as cmd
+participant ExecutionResult as res
+participant HystrixCommandMetrics as metrics
+participant HystrixThreadEventStream as stream
+participant HystrixCommandCompletion as completion
+participant PublishSubject as subject
+participant HystrixCommandCompletionStream as completionStream
+participant HystrixThreadPoolCompletionStream as poolStream
+participant SerializedSubject as serial
+
+cmd -> cmd : handleCommandEnd(true)
+note left : 请求结束或异常时执行
+cmd -> res : markUserThreadCompletion(...)
+cmd <-- res : executionResult:ExecutionResult
+cmd -> metrics : markCommandDone(...)
+metrics -> stream : executionDone(...)
+stream -> completion : from(..)
+stream <-- completion : event:HystrixCommandCompletion
+
+stream -> subject : onNext(event)
+subject -> subject : doOnNext(...)
+activate subject
+subject -> completionStream : getInstance(...)
+subject <-- completionStream : completionStream:HystrixCommandCompletionStream
+subject -> completionStream : write(event)
+completionStream -> serial : onNext(event)
+note over serial : 事件传播的中介，使用Subject作为中转站
+opt 线程隔离方式
+subject -> poolStream : getInstance(...)
+subject <-- poolStream : completionStream:HystrixCommandCompletionStream
+subject -> poolStream : write(event)
+poolStream   -> serial : onNext(event)
+end
+return
+
+@enduml

@@ -126,6 +126,7 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
         }
 
         HystrixCollapserProperties properties = HystrixPropertiesFactory.getCollapserProperties(collapserKey, propertiesBuilder);
+        //RequestCollapser工厂，根据不同的scope创建不同的RequestCollapser并根据collapserKey缓存
         this.collapserFactory = new RequestCollapserFactory<BatchReturnType, ResponseType, RequestArgumentType>(collapserKey, scope, timer, properties);
         this.requestCache = HystrixRequestCache.getInstance(collapserKey, HystrixPlugins.getInstance().getConcurrencyStrategy());
 
@@ -143,10 +144,12 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
         /**
          * Used to pass public method invocation to the underlying implementation in a separate package while leaving the methods 'protected' in this class.
          */
+        //为RequestBatch里调用HystrixCollapser的方法提供桥梁
         collapserInstanceWrapper = new HystrixCollapserBridge<BatchReturnType, ResponseType, RequestArgumentType>() {
 
             @Override
             public Collection<Collection<CollapsedRequest<ResponseType, RequestArgumentType>>> shardRequests(Collection<CollapsedRequest<ResponseType, RequestArgumentType>> requests) {
+                //将多个命令请求进行分割执行，如一个合并请求（包含100个请求）分为2个50的合并请求，具体怎么分根据重写逻辑
                 Collection<Collection<CollapsedRequest<ResponseType, RequestArgumentType>>> shards = self.shardRequests(requests);
                 self.metrics.markShards(shards.size());
                 return shards;
@@ -154,6 +157,8 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
 
             @Override
             public Observable<BatchReturnType> createObservableCommand(Collection<CollapsedRequest<ResponseType, RequestArgumentType>> requests) {
+                //子类实现createCommand方法，返回一个继承HystrixCommand且run方法中调用的业务代码为接受批量参数的服务调用
+                // createCommand的职责为将单个服务调用的参数封装为集合，传递给执行批量参数的HystrixCommand
                 final HystrixCommand<BatchReturnType> command = self.createCommand(requests);
 
                 command.markAsCollapsedCommand(this.getCollapserKey(), requests.size());
@@ -164,11 +169,13 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
 
             @Override
             public Observable<Void> mapResponseToRequests(Observable<BatchReturnType> batchResponse, final Collection<CollapsedRequest<ResponseType, RequestArgumentType>> requests) {
+                //batchResponse只发射一次，如果发射多次single()会抛异常（什么时候会出现这种情况？）
                 return batchResponse.single().doOnNext(new Action1<BatchReturnType>() {
                     @Override
                     public void call(BatchReturnType batchReturnType) {
                         // this is a blocking call in HystrixCollapser
                         self.mapResponseToRequests(batchReturnType, requests);
+                        //将Observable变为不会发射（只有onCompleted & on Error还能跑）
                     }
                 }).ignoreElements().cast(Void.class);
             }
@@ -393,8 +400,9 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
                         return fromCache.toObservable();
                     }
                 }
-
+                //请求合并器
                 RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType> requestCollapser = collapserFactory.getRequestCollapser(collapserInstanceWrapper);
+                //提交单个请求
                 Observable<ResponseType> response = requestCollapser.submitRequest(getRequestArgument());
 
                 if (isRequestCacheEnabled && cacheKey != null) {
@@ -454,6 +462,8 @@ public abstract class HystrixCollapser<BatchReturnType, ResponseType, RequestArg
      *             within an <code>ExecutionException.getCause()</code> (thrown by {@link Future#get}) if an error occurs and a fallback cannot be retrieved
      */
     public Future<ResponseType> queue() {
+        //维持一个CountDownLatch(1)且在future.get()里调用await，并创建一个观察者订阅Observable，
+        // 当Observable发射数据，观察者将CountDownLatch减一并记录数据，future从阻塞中返回
         return toObservable()
                 .toBlocking()
                 .toFuture();

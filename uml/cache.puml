@@ -1,0 +1,35 @@
+@startuml
+title AbstractCommand#toObservable#Observable.defer
+
+participant AbstractCommand as cmd
+participant HystrixRequestCache as request
+'participant HystrixCommandResponseFromCache as resp
+participant HystrixCachedObservable as observable
+participant HystrixRequestVariableHolder as holder
+participant HystrixConcurrentStrategy as strategy
+participant HystrixRequestVariable as variable
+'participant HystrixRequestVariableLifecycle as life
+
+opt if 开启缓存
+cmd -> request : get(...)
+request -> holder : get(...)
+holder -> map : get(..)
+holder <-- map : rvInstance:HystrixRequestVariable
+opt if(rvInstance == null)
+holder -> strategy : getRequestVariable(...)
+holder <-- strategy : HystrixRequestVariable
+end
+holder -> variable : get()
+holder <-- variable : map
+request <-- holder : cacheInstance:ConcurrentHashMap<ValueCacheKey, HystrixCachedObservable>
+cmd <-- request : fromCache:HystrixCommandResponseFromCache
+end
+
+opt if 开启缓存 && 缓存不命中
+cmd -> observable : from(...)
+cmd <-- observable : toCache:HystrixCachedObservable
+cmd -> request : putIfAbsent(...)
+cmd <-- request : fromCache:HystrixCommandResponseFromCache
+note right: 如果别的线程抢先，直接取缓存；否则继续服务调用流程
+end
+@enduml

@@ -40,7 +40,9 @@ public abstract class BucketedCumulativeCounterStream<Event extends HystrixEvent
         super(stream, numBuckets, bucketSizeInMs, reduceCommandCompletion);
 
         this.sourceStream = bucketedStream
+                //将当前窗口内所有Observable遍历执行reduceBucket(子类实现)，getEmptyOutputValue()为上一次执行reduceBucket后的结果（此处可认为是空数组，来存放结果）
                 .scan(getEmptyOutputValue(), reduceBucket)
+                //统计完当前窗口后把当前窗口内的桶都丢掉
                 .skip(numBuckets)
                 .doOnSubscribe(new Action0() {
                     @Override
@@ -54,7 +56,9 @@ public abstract class BucketedCumulativeCounterStream<Event extends HystrixEvent
                         isSourceCurrentlySubscribed.set(false);
                     }
                 })
+                //把cold转为不那么cold的observable（新订阅的subscribers不会收到订阅前发送的数据，同时observable需要被订阅才能开始发送数据）
                 .share()                        //multiple subscribers should get same data
+                //消费者处理不过来时丢弃数据
                 .onBackpressureDrop();          //if there are slow consumers, data should not buffer
     }
 

@@ -11,6 +11,7 @@ public class HystrixCachedObservable<R> {
     private volatile int outstandingSubscriptions = 0;
 
     protected HystrixCachedObservable(final Observable<R> originalObservable) {
+        //通过replaySubject重放获得缓存
         ReplaySubject<R> replaySubject = ReplaySubject.create();
         this.originalSubscription = originalObservable
                 .subscribe(replaySubject);

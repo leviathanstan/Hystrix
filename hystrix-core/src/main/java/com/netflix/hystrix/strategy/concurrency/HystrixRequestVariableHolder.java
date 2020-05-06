@@ -64,7 +64,7 @@ public class HystrixRequestVariableHolder<T> {
                 logger.warn("Over 100 instances of HystrixRequestVariable are being stored. This is likely the sign of a memory leak caused by using unique instances of HystrixConcurrencyStrategy instead of a single instance.");
             }
         }
-
+        //调用的是HystrixLifecycleForwardingRequestVariable.get()，会判断HystrixRequestContext有没有设置，没有设置则返回null，引发上层抛异常
         return (T) requestVariableInstance.get(key).get();
     }
 

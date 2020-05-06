@@ -42,11 +42,14 @@ public abstract class BucketedRollingCounterStream<Event extends HystrixEvent, B
         Func1<Observable<Bucket>, Observable<Output>> reduceWindowToSummary = new Func1<Observable<Bucket>, Observable<Output>>() {
             @Override
             public Observable<Output> call(Observable<Bucket> window) {
+                //子类实现具体逻辑
                 return window.scan(getEmptyOutputValue(), reduceBucket).skip(numBuckets);
             }
         };
         this.sourceStream = bucketedStream      //stream broken up into buckets
+                //numBuckets:一个窗口内桶的个数，"1"表示一次移动一个窗口
                 .window(numBuckets, 1)          //emit overlapping windows of buckets
+                //新纳入的桶(Observable)的处理逻辑
                 .flatMap(reduceWindowToSummary) //convert a window of bucket-summaries into a single summary
                 .doOnSubscribe(new Action0() {
                     @Override

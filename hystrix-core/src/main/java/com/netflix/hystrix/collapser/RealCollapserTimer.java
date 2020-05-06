@@ -25,6 +25,7 @@ import com.netflix.hystrix.util.HystrixTimer.TimerListener;
  */
 public class RealCollapserTimer implements CollapserTimer {
     /* single global timer that all collapsers will schedule their tasks on */
+    //单例，封装了ScheduledThreadPoolExecutor
     private final static HystrixTimer timer = HystrixTimer.getInstance();
 
     @Override

@@ -1,0 +1,78 @@
+@startuml
+title HystrixCollapser#execute()
+
+participant HystrixCollapser as hc
+participant RequestCollapserFactory as factory
+participant RequestCollapser as request
+participant RequestBatch as batch
+participant CollapserTask as task
+participant CollapserTimer as timer
+participant HystrixCollapserBridge as bridge
+participant CollapsedRequestSubject as subject
+
+hc -> hc : queue()
+activate hc
+' toObservable
+hc -> hc : toObservable()
+activate hc
+hc -> factory : getRequestCollapser(...)
+note over factory : 实现上和缓存的上下文实现是差不多的
+alt if scope == global
+factory -> factory : getCollapserForGlobalScope
+note over factory : 全局作用域，全部线程共用一个ResquestCollapser(key相同)
+hc <-- factory : RequestCollapser
+else scope == request
+factory -> factory : getCollapserForUserRequest
+note over factory : 请求作用域，一个请求一个RequestCollapser
+hc <-- factory : RequestCollapser
+end
+'submit
+hc -> request : submitRequest(...)
+note right : 提交单个请求
+opt 定时器还没开(ScheduledThreadPoolExecutor)
+request -> task : new
+request <-- task : CollapserTask
+note left : 定时执行的runable
+request -> timer : addListener
+request <-- timer : TimerListener
+note left : 添加定时任务
+end
+opt while(true)
+request -> batch : get()
+request <-- batch : b:RequestBatch
+note right : RequestBatch用来保存所有请求，可简单理解为队列
+request -> batch : offer(...)
+'subject
+batch -> subject : new
+batch <-- subject : collapsedRequest:CollapsedRequestSubject
+note over batch : 中间有缓存的一些处理
+batch -> subject : collapsedRequest.toObservable()
+note over subject : ReplySubject和Observable的应用
+batch <-- subject : Observable
+request <-- batch : response:Observable
+note right : 这个Observable用来当服务调用完成传递响应并通知future
+opt if  response == null //加不进batch
+request -> request : createNewBatchAndExecutePreviousIfNeeded(...)
+note right : 见下方【定时任务】
+end
+end
+hc <-- request : Observable
+return Observable
+return Future
+note over hc : Observable.onComplete中会释放资源，\n future从阻塞中返回
+
+opt 定时任务runable
+task -> request : createNewBatchAndExecutePreviousIfNeeded(...)
+request -> batch : executeBatchIfNotAlreadyStarted()
+batch -> bridge : shardRequests(...)
+note left : 请求分片
+batch <-- bridge : shards:Collection<Collection<CollapsedRequest>>
+batch -> bridge : createObservableCommand(...)
+note left #red: 调用请求合并的服务调用
+batch <-- bridge : o:Observable<BatchReturnType>
+batch -> bridge : mapResponseToRequests(...)
+note left : 设置合并请求的响应到对应的单个请求上
+batch <-- bridge : void
+
+end
+@enduml

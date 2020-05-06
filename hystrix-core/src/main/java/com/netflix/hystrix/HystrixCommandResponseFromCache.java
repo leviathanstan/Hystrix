@@ -18,6 +18,7 @@ public class HystrixCommandResponseFromCache<R> extends HystrixCachedObservable<
         final AtomicBoolean completionLogicRun = new AtomicBoolean(false);
 
         return cachedObservable
+                //三个方法只有一个会执行error和completed会从传入的AbstractCommand（缓存）中复制executionResult
                 .doOnError(new Action1<Throwable>() {
                     @Override
                     public void call(Throwable throwable) {

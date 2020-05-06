@@ -1,0 +1,60 @@
+@startuml
+title AbstractCommand#toObservable
+
+participant AbstractCommand as cmd
+participant Observable as observable
+participant HystrixCommand as hcmd
+participant HystrixObservableTimeoutOperator as timeout
+participant TimerListener as listener
+participant HystrixTimer as timer
+
+cmd -> observable : defer(...)
+activate observable
+observable -> observable : defer(...)
+activate observable
+observable -> cmd : applyHystrixSemantics(...)
+alt if 断路器关闭
+alt 信号量可以获取 或 线程隔离方式
+cmd -> cmd : executeCommandAndObserve(...)
+note right : 定义了执行完成时或抛异常时的处理工作，\n主要是记录，为断路器提供信息
+cmd -> cmd : executeCommandWithSpecifiedIsolation(...)
+note right : 线程和信号量在这里分开处理
+opt 开启超时检测
+cmd -> timeout : new
+timeout -> listener : new
+note left : 定义超时后的行为，onError
+timeout <-- listener : listener:TimerListener
+timeout -> timer : addTimerListener(listener)
+note left : 将一个任务提交到ScheduledThreadPoolExecutor中执行，延迟执行的时间就是超时时间
+timeout <-- timer
+cmd <-- timeout :
+end
+opt 线程隔离
+cmd -> observable : subscribeOn(threadPool.getScheduler(...))
+note right : 线程分配
+end
+cmd -> cmd : getUserExecutionObservable(...)
+cmd -> hcmd : getExecutionObservable()
+hcmd -> observable : defer(...)
+activate observable
+observable -> observable : Observable.just(run())
+observable -> hcmd : run()
+note right : 业务代码
+observable <-- hcmd : response
+return Observable
+cmd <-- hcmd : Observable
+cmd -> observable : Observable
+
+else 信号量获取不到
+cmd -> cmd : handleSemaphoreRejectionViaFallback()
+observable <-- cmd : Observable
+end
+
+else 断路器开启
+cmd -> cmd : handleSemaphoreRejectionViaFallback()
+observable <-- cmd : Observable
+end
+return Observable
+return Observable
+
+@enduml

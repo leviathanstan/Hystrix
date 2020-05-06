@@ -1,0 +1,50 @@
+@startuml
+title metrics
+
+participant AbstractCommand as cmd
+participant HystrixCommandMetrics as metrics
+participant HealthCountsStream as health
+participant BucketedRollingCounterStream as bucketRoll
+participant BucketedCounterStream as bucketCount
+participant Observable as observable
+participant HystrixCommandCompletionStream as stream
+participant CumulativeCommandEventCounterStream as cumula
+participant BucketedCumulativeCounterStream as bucketCumula
+
+cmd -> cmd : initMetrics(...)
+cmd -> metrics : getInstance(...)
+metrics -> metrics : new
+opt 滑动计数器
+metrics -> health : getInstance(...)
+health -> health : new
+note over health : 窗口计数框架由父类实现，此类实现具体的计数逻辑\n 实际上具体的逻辑又是使用了HystrixCommandMetrics的
+health -> bucketRoll : super(...)
+bucketRoll -> bucketCount : super(...)
+bucketCount -> observable : defer(...)
+observable -> stream : toserve()
+observable <-- stream : Observable
+note left : 数据来源
+observable -> observable : window(...)
+note left : 将收到的数据按一个桶的时长来缓存，再以桶作为单位统计后发送出去
+observable -> observable : flatMap
+note left : 统计一个桶内各个事件的发生次数，\n 具体逻辑由子类实现(HystrixCommandMetrics.appendEventToBucket)
+
+bucketRoll -> observable : window(...)
+note left : 维持一个时间窗口，即维持固定数目的桶
+bucketRoll -> observable : flatMap(...)
+note left : 将新纳入窗口的桶的数据合并到整个窗口，\n 具体逻辑由子类实现(HystrixCommandMetrics.HealthCounts.plus(long[])
+end
+opt 累计计数器
+metrics -> cumula : getInstance(...)
+cumula -> cumula : new
+cumula -> bucketCumula : super(...)
+bucketCumula -> bucketCount : super(...)
+bucketCumula -> Observable : scan(...)
+note left : 当前窗口内所有桶遍历一遍
+bucketCumula -> Observable : skip(numBuckets)
+note left : 丢弃所有统计过的桶
+
+end
+cmd <-- metrics : HystrixCommandMetrics
+
+@enduml

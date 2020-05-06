@@ -45,6 +45,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
 
     private final HystrixCollapserBridge<BatchReturnType, ResponseType, RequestArgumentType> commandCollapser;
     // batch can be null once shutdown
+    //请求封装器
     private final AtomicReference<RequestBatch<BatchReturnType, ResponseType, RequestArgumentType>> batch = new AtomicReference<RequestBatch<BatchReturnType, ResponseType, RequestArgumentType>>();
     private final AtomicReference<Reference<TimerListener>> timerListenerReference = new AtomicReference<Reference<TimerListener>>();
     private final AtomicBoolean timerListenerRegistered = new AtomicBoolean();
@@ -80,10 +81,12 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
          */
         if (!timerListenerRegistered.get() && timerListenerRegistered.compareAndSet(false, true)) {
             /* schedule the collapsing task to be executed every x milliseconds (x defined inside CollapsedTask) */
+            //创建定时器的监听器，监听器定时从RequestBatch取请求
             timerListenerReference.set(timer.addListener(new CollapsedTask()));
         }
 
         // loop until succeed (compare-and-set spin-loop)
+        //可能有多个线程竞争
         while (true) {
             final RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> b = batch.get();
             if (b == null) {
@@ -94,6 +97,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
             if (arg != null) {
                 response = b.offer(arg);
             } else {
+                //ConcurrentHashMap不允许null
                 response = b.offer( (RequestArgumentType) NULL_SENTINEL);
             }
             // it will always get an Observable unless we hit the max batch size
@@ -112,6 +116,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
         }
         if (batch.compareAndSet(previousBatch, new RequestBatch<BatchReturnType, ResponseType, RequestArgumentType>(properties, commandCollapser, properties.maxRequestsInBatch().get()))) {
             // this thread won so trigger the previous batch
+            //合并请求执行入口
             previousBatch.executeBatchIfNotAlreadyStarted();
         }
     }
@@ -136,7 +141,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
      */
     private class CollapsedTask implements TimerListener {
         final Callable<Void> callableWithContextOfParent;
-
+        //固定周期执行，可以理解为一个Runable
         CollapsedTask() {
             // this gets executed from the context of a HystrixCommand parent thread (such as a Tomcat thread)
             // so we create the callable now where we can capture the thread context
@@ -148,6 +153,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
                     try {
                         // we fetch current so that when multiple threads race
                         // we can do compareAndSet with the expected/new to ensure only one happens
+                        //batch是一个RequestCollapser一份的，即获取当前batch来执行合并请求
                         RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> currentBatch = batch.get();
                         // 1) it can be null if it got shutdown
                         // 2) we don't execute this batch if it has no requests and let it wait until next tick to be executed
@@ -178,6 +184,7 @@ public class RequestCollapser<BatchReturnType, ResponseType, RequestArgumentType
 
         @Override
         public int getIntervalTimeInMilliseconds() {
+            //默认10ms，HystrixCollapserProperties.default_timerDelayInMilliseconds
             return properties.timerDelayInMilliseconds().get();
         }
 

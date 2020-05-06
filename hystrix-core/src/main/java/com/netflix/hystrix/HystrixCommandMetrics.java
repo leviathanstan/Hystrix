@@ -45,7 +45,7 @@ public class HystrixCommandMetrics extends HystrixMetrics {
     private static final Logger logger = LoggerFactory.getLogger(HystrixCommandMetrics.class);
 
     private static final HystrixEventType[] ALL_EVENT_TYPES = HystrixEventType.values();
-
+    //滑动窗口计数逻辑
     public static final Func2<long[], HystrixCommandCompletion, long[]> appendEventToBucket = new Func2<long[], HystrixCommandCompletion, long[]>() {
         @Override
         public long[] call(long[] initialCountArray, HystrixCommandCompletion execution) {
@@ -54,6 +54,7 @@ public class HystrixCommandMetrics extends HystrixMetrics {
                 switch (eventType) {
                     case EXCEPTION_THROWN: break; //this is just a sum of other anyway - don't do the work here
                     default:
+                        //累加对应的事件类型发生次数，数组下标为事件的枚举值
                         initialCountArray[eventType.ordinal()] += eventCounts.getCount(eventType);
                         break;
                 }
@@ -61,7 +62,7 @@ public class HystrixCommandMetrics extends HystrixMetrics {
             return initialCountArray;
         }
     };
-
+    //累加计数逻辑
     public static final Func2<long[], long[], long[]> bucketAggregator = new Func2<long[], long[], long[]>() {
         @Override
         public long[] call(long[] cumulativeEvents, long[] bucketEventCounts) {
@@ -131,6 +132,7 @@ public class HystrixCommandMetrics extends HystrixMetrics {
                     } else {
                         nonNullThreadPoolKey = threadPoolKey;
                     }
+                    //构造函数创建，同一 HystrixCommandKey 只需创建一次
                     HystrixCommandMetrics newCommandMetrics = new HystrixCommandMetrics(key, commandGroup, nonNullThreadPoolKey, properties, HystrixPlugins.getInstance().getEventNotifier());
                     metrics.putIfAbsent(key.name(), newCommandMetrics);
                     return newCommandMetrics;
@@ -188,9 +190,10 @@ public class HystrixCommandMetrics extends HystrixMetrics {
         this.group = commandGroup;
         this.threadPoolKey = threadPoolKey;
         this.properties = properties;
-
+        //滑动窗口计数
         healthCountsStream = HealthCountsStream.getInstance(key, properties);
         rollingCommandEventCounterStream = RollingCommandEventCounterStream.getInstance(key, properties);
+        //累计计数
         cumulativeCommandEventCounterStream = CumulativeCommandEventCounterStream.getInstance(key, properties);
 
         rollingCommandLatencyDistributionStream = RollingCommandLatencyDistributionStream.getInstance(key, properties);
@@ -337,6 +340,7 @@ public class HystrixCommandMetrics extends HystrixMetrics {
     }
 
     /* package-private */ void markCommandDone(ExecutionResult executionResult, HystrixCommandKey commandKey, HystrixThreadPoolKey threadPoolKey, boolean executionStarted) {
+        //HystrixThreadEventStream与线程绑定，getInstance即ThreadLocal.get
         HystrixThreadEventStream.getInstance().executionDone(executionResult, commandKey, threadPoolKey);
         if (executionStarted) {
             concurrentExecutionCount.decrementAndGet();
@@ -420,13 +424,13 @@ public class HystrixCommandMetrics extends HystrixMetrics {
         public HealthCounts plus(long[] eventTypeCounts) {
             long updatedTotalCount = totalCount;
             long updatedErrorCount = errorCount;
-
+            //统计事件数组中各个事件的发生次数
             long successCount = eventTypeCounts[HystrixEventType.SUCCESS.ordinal()];
             long failureCount = eventTypeCounts[HystrixEventType.FAILURE.ordinal()];
             long timeoutCount = eventTypeCounts[HystrixEventType.TIMEOUT.ordinal()];
             long threadPoolRejectedCount = eventTypeCounts[HystrixEventType.THREAD_POOL_REJECTED.ordinal()];
             long semaphoreRejectedCount = eventTypeCounts[HystrixEventType.SEMAPHORE_REJECTED.ordinal()];
-
+            //最终只统计成功或失败的次数
             updatedTotalCount += (successCount + failureCount + timeoutCount + threadPoolRejectedCount + semaphoreRejectedCount);
             updatedErrorCount += (failureCount + timeoutCount + threadPoolRejectedCount + semaphoreRejectedCount);
             return new HealthCounts(updatedTotalCount, updatedErrorCount);

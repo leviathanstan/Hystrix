@@ -112,6 +112,7 @@ public interface HystrixThreadPool {
             // if we get here this is the first time so we need to initialize
             synchronized (HystrixThreadPool.class) {
                 if (!threadPools.containsKey(key)) {
+                    //线程池创建
                     threadPools.put(key, new HystrixThreadPoolDefault(threadPoolKey, propertiesBuilder));
                 }
             }
@@ -174,6 +175,7 @@ public interface HystrixThreadPool {
             this.queueSize = properties.maxQueueSize().get();
 
             this.metrics = HystrixThreadPoolMetrics.getInstance(threadPoolKey,
+                    //实际线程池创建逻辑
                     concurrencyStrategy.getThreadPool(threadPoolKey, properties),
                     properties);
             this.threadPool = this.metrics.getThreadPool();
@@ -202,6 +204,7 @@ public interface HystrixThreadPool {
 
         @Override
         public Scheduler getScheduler(Func0<Boolean> shouldInterruptThread) {
+            //构造函数已经设置过一遍了，再微调一下下
             touchConfig();
             return new HystrixContextScheduler(HystrixPlugins.getInstance().getConcurrencyStrategy(), this, shouldInterruptThread);
         }

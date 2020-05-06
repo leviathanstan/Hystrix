@@ -51,6 +51,7 @@ public abstract class BucketedCounterStream<Event extends HystrixEvent, Bucket, 
         this.reduceBucketToSummary = new Func1<Observable<Event>, Observable<Bucket>>() {
             @Override
             public Observable<Bucket> call(Observable<Event> eventBucket) {
+                //聚合数据，由子类实现具体逻辑
                 return eventBucket.reduce(getEmptyBucketSummary(), appendRawEventToBucket);
             }
         };
@@ -59,14 +60,18 @@ public abstract class BucketedCounterStream<Event extends HystrixEvent, Bucket, 
         for (int i = 0; i < numBuckets; i++) {
             emptyEventCountsToStart.add(getEmptyBucketSummary());
         }
-
+        //以子类HealthCountsStream的实现为例，传入的数据源inputEventStream实际上是 HystrixCommandCompletionStream
         this.bucketedStream = Observable.defer(new Func0<Observable<Bucket>>() {
             @Override
             public Observable<Bucket> call() {
                 return inputEventStream
-                        .observe()
+                        .observe()  //即返回一个Observable<HystrixCommandCompletion>
+                        //将来自Observable的数据按照指定时间间隔缓存下来，然后再一起发送出去，视为一个桶
+                        //bucketSizeInMs即为一个桶的时长：时间窗口/桶的个数
                         .window(bucketSizeInMs, TimeUnit.MILLISECONDS) //bucket it by the counter window so we can emit to the next operator in time chunks, not on every OnNext
+                        //统计一个桶内各个事件发生次数，保存在array
                         .flatMap(reduceBucketToSummary)                //for a given bucket, turn it into a long array containing counts of event types
+                        //将新的Observable放到最前面
                         .startWith(emptyEventCountsToStart);           //start it with empty arrays to make consumer logic as generic as possible (windows are always full)
             }
         });

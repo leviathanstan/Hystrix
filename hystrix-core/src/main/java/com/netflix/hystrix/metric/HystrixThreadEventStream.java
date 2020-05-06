@@ -83,9 +83,10 @@ public class HystrixThreadEventStream {
     private static final Action1<HystrixCommandCompletion> writeCommandCompletionsToShardedStreams = new Action1<HystrixCommandCompletion>() {
         @Override
         public void call(HystrixCommandCompletion commandCompletion) {
+            //将HystrixCommandCompletion写入到HystrixCommandCompletionStream的map中
             HystrixCommandCompletionStream commandStream = HystrixCommandCompletionStream.getInstance(commandCompletion.getCommandKey());
             commandStream.write(commandCompletion);
-
+            //如果是线程隔离方式，再往HystrixThreadPoolCompletionStream写一次，逻辑和上面一样
             if (commandCompletion.isExecutedInThread() || commandCompletion.isResponseThreadPoolRejected()) {
                 HystrixThreadPoolCompletionStream threadPoolStream = HystrixThreadPoolCompletionStream.getInstance(commandCompletion.getThreadPoolKey());
                 threadPoolStream.write(commandCompletion);
@@ -115,6 +116,7 @@ public class HystrixThreadEventStream {
 
         writeOnlyCommandCompletionSubject
                 .onBackpressureBuffer()
+                //对 executionDone 创建的事件进行处理
                 .doOnNext(writeCommandCompletionsToShardedStreams)
                 .unsafeSubscribe(Subscribers.empty());
 
@@ -141,7 +143,9 @@ public class HystrixThreadEventStream {
     }
 
     public void executionDone(ExecutionResult executionResult, HystrixCommandKey commandKey, HystrixThreadPoolKey threadPoolKey) {
+        //HystrixCommandCompletion实现HystrixEvent接口，标志着command事件的完成并记录了当前状态的信息
         HystrixCommandCompletion event = HystrixCommandCompletion.from(executionResult, commandKey, threadPoolKey);
+        //writeOnlyCommandCompletionSubject，实际类型为PublishSubject
         writeOnlyCommandCompletionSubject.onNext(event);
     }
 

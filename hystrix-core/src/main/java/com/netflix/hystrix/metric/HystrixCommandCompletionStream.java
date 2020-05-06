@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class HystrixCommandCompletionStream implements HystrixEventStream<HystrixCommandCompletion> {
     private final HystrixCommandKey commandKey;
-
+    //使用Subject作为中转，使用subject.onNext接受事件，并以Observable的形式传送出去
     private final Subject<HystrixCommandCompletion, HystrixCommandCompletion> writeOnlySubject;
     private final Observable<HystrixCommandCompletion> readOnlyStream;
 
@@ -56,8 +56,9 @@ public class HystrixCommandCompletionStream implements HystrixEventStream<Hystri
 
     HystrixCommandCompletionStream(final HystrixCommandKey commandKey) {
         this.commandKey = commandKey;
-
+        //使用SerializedSubject保证线程安全，PublishSubject来实现只发送被订阅之后产生的新数据
         this.writeOnlySubject = new SerializedSubject<HystrixCommandCompletion, HystrixCommandCompletion>(PublishSubject.<HystrixCommandCompletion>create());
+        //被观察者
         this.readOnlyStream = writeOnlySubject.share();
     }
 

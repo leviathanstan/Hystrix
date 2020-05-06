@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
     private final R argument;
 
     private AtomicBoolean valueSet = new AtomicBoolean(false);
+    //subject作为个中转站，接受服务调用成功返回的数据，发射给subjectWithAccounting，subjectWithAccounting收到后，future.get从阻塞中退出
+    //对比来说，HystrixCommandCompletionStream里的实现是通过调用Subject.share()来做到类似的功能
     private final ReplaySubject<T> subject = ReplaySubject.create();
     private final Observable<T> subjectWithAccounting;
 
@@ -58,6 +60,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
             this.argument = arg;
         }
         this.subjectWithAccounting = subject
+                //在future.get中被订阅
                 .doOnSubscribe(new Action0() {
                     @Override
                     public void call() {
@@ -67,6 +70,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
                 .doOnUnsubscribe(new Action0() {
                     @Override
                     public void call() {
+                        //当被订阅数为0，从RequestBatch中移除
                         outstandingSubscriptions--;
                         if (outstandingSubscriptions == 0) {
                             containingBatch.remove(arg);

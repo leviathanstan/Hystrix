@@ -43,7 +43,7 @@ public class HealthCountsStream extends BucketedRollingCounterStream<HystrixComm
     private static final ConcurrentMap<String, HealthCountsStream> streams = new ConcurrentHashMap<String, HealthCountsStream>();
 
     private static final int NUM_EVENT_TYPES = HystrixEventType.values().length;
-
+    //对时间窗口内一个新的桶的数据的处理逻辑（即将新的桶的数据加到整个时间窗口里）
     private static final Func2<HystrixCommandMetrics.HealthCounts, long[], HystrixCommandMetrics.HealthCounts> healthCheckAccumulator = new Func2<HystrixCommandMetrics.HealthCounts, long[], HystrixCommandMetrics.HealthCounts>() {
         @Override
         public HystrixCommandMetrics.HealthCounts call(HystrixCommandMetrics.HealthCounts healthCounts, long[] bucketEventCounts) {
@@ -72,6 +72,7 @@ public class HealthCountsStream extends BucketedRollingCounterStream<HystrixComm
                 HealthCountsStream existingStream = streams.get(commandKey.name());
                 if (existingStream == null) {
                     HealthCountsStream newStream = new HealthCountsStream(commandKey, numBuckets, bucketSizeInMs,
+                            //父类BucketedCounterStream中的数据聚合逻辑(reduceBucketToSummary)在此传入
                             HystrixCommandMetrics.appendEventToBucket);
 
                     streams.putIfAbsent(commandKey.name(), newStream);
@@ -100,6 +101,7 @@ public class HealthCountsStream extends BucketedRollingCounterStream<HystrixComm
 
     @Override
     long[] getEmptyBucketSummary() {
+        //空桶，长度为事件枚举个数
         return new long[NUM_EVENT_TYPES];
     }
 

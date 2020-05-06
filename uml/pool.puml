@@ -1,0 +1,70 @@
+@startuml
+title 线程分配与执行
+
+participant AbstractCommand as cmd
+participant HystrixThreadPoolDefault as default
+participant HystrixContextScheduler as contextScheduler
+participant ThreadPoolScheduler as poolScheduler
+participant HystrixContextSchedulerWorker as schedulerWorker
+participant ThreadPoolWorker as poolWork
+participant ThreadPoolExecutor as executor
+participant ScheduledAction as action
+participant FutureCompleterWithConfigurableInterrupt as interrupt
+
+opt 调度器初始化
+cmd -> default : getScheduler(...)
+default -> default : touchConfig()
+activate default
+default -> executor
+note left : ThreadPoolExecutor的参数设置与调整
+default <-- executor
+return
+default -> contextScheduler : new
+contextScheduler -> poolScheduler : new
+contextScheduler <-- poolScheduler : actualScheduler:ThreadPoolScheduler
+
+default <-- contextScheduler :
+cmd <-- default : Scheduler
+end
+
+opt HystrixContextScheduler#createWorker()
+contextScheduler -> poolScheduler : createWorker()
+
+poolScheduler -> poolWork : new
+
+poolScheduler <-- poolWork : worker
+
+contextScheduler <-- poolScheduler : Worker
+contextScheduler -> schedulerWorker : new(worker)
+return worker
+end
+
+opt HystrixContextSchedulerWorker#schedule
+schedulerWorker -> schedulerWorker : schedule
+schedulerWorker -> default : isQueueSpaceAvailable
+note right : 队列满了抛异常
+schedulerWorker <-- default :
+schedulerWorker -> poolWork : schedule(...)
+
+schedulerWorker -> action : new
+note over action : Rxjava里的东西
+schedulerWorker <-- action : sa:ScheduledAction
+
+poolWork -> default : getExecutor()
+note over default : ThreadPoolExecutor由HystrixThreadPoolDefault封装
+poolWork <-- default : executor:ThreadPoolExecutor
+poolWork -> executor : submit(sa)
+poolWork <-- executor : FutureTask
+
+poolWork -> interrupt : new
+poolWork <-- interrupt : FutureCompleterWithConfigurableInterrupt
+poolWork -> action : add(FutureCompleterWithConfigurableInterrupt)
+poolWork <-- action
+opt 当超时发生
+interrupt -> interrupt : unsubscribe()
+interrupt -> executor : remove(Future)
+note right : 移除任务，并根据情况是否给予中断
+end
+schedulerWorker <-- poolWork : Subscription
+end
+@enduml

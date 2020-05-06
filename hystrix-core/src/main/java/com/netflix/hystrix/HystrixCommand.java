@@ -384,7 +384,7 @@ public abstract class HystrixCommand<R> extends AbstractCommand<R> implements Hy
                 if (delegate.isCancelled()) {
                     return false;
                 }
-
+                //interrupt的逻辑挺诡异的，InterruptOnFutureCancel默认是为false，那么其实默认mayInterruptIfRunning这个入参是没用的？
                 if (HystrixCommand.this.getProperties().executionIsolationThreadInterruptOnFutureCancel().get()) {
                     /*
                      * The only valid transition here is false -> true. If there are two futures, say f1 and f2, created by this command

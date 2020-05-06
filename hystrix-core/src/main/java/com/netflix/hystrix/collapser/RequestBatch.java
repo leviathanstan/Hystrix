@@ -63,6 +63,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
      */
     public Observable<ResponseType> offer(RequestArgumentType arg) {
         /* short-cut - if the batch is started we reject the offer */
+        //命令已经开始执行，不用去竞争锁了
         if (batchStarted.get()) {
             return null;
         }
@@ -70,9 +71,11 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
         /*
          * The 'read' just means non-exclusive even though we are writing.
          */
+        //Concurrent可以容忍一定程度的并发读和写
         if (batchLock.readLock().tryLock()) {
             try {
                 /* double-check now that we have the lock - if the batch is started we reject the offer */
+                //写锁的获取方式是先cas标记再去拿锁（executeBatchIfNotAlreadyStarted），可能会出现并发问题，需要double check
                 if (batchStarted.get()) {
                     return null;
                 }
@@ -100,6 +103,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
                         if (requestCachingEnabled) {
                             return existing.toObservable();
                         } else {
+                            //为什么保留一个缓存关闭的选项：This forces the user to not place the same argument in the batch
                             return Observable.error(new IllegalArgumentException("Duplicate argument in collapser batch : [" + arg + "]  This is not supported.  Please turn request-caching on for HystrixCollapser:" + commandCollapser.getCollapserKey().name() + " or prevent duplicates from making it into the batch!"));
                         }
                     } else {
@@ -164,6 +168,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
 
             try {
                 // shard batches
+                //分割请求
                 Collection<Collection<CollapsedRequest<ResponseType, RequestArgumentType>>> shards = commandCollapser.shardRequests(argumentMap.values());
                 // for each shard execute its requests 
                 for (final Collection<CollapsedRequest<ResponseType, RequestArgumentType>> shardRequests : shards) {
@@ -179,6 +184,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
                             @Override
                             public void call(Throwable e) {
                                 // handle Throwable in case anything is thrown so we don't block Observers waiting for onError/onCompleted
+                                //要确保每个请求无论成功或失败都有返回，否则observable对应的future会一致阻塞下去
                                 Exception ee;
                                 if (e instanceof Exception) {
                                     ee = (Exception) e;
@@ -187,6 +193,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
                                 }
                                 logger.debug("Exception mapping responses to requests.", e);
                                 // if a failure occurs we want to pass that exception to all of the Futures that we've returned
+                                //合并请求发生异常，给所有单个请求的结果设置为异常
                                 for (CollapsedRequest<ResponseType, RequestArgumentType> request : argumentMap.values()) {
                                     try {
                                         ((CollapsedRequestSubject<ResponseType, RequestArgumentType>) request).setExceptionIfResponseNotReceived(ee);
@@ -207,6 +214,7 @@ public class RequestBatch<BatchReturnType, ResponseType, RequestArgumentType> {
                             @Override
                             public void call() {
                                 // check that all requests had setResponse or setException invoked in case 'mapResponseToRequests' was implemented poorly
+                                //当业务代码重写的'mapResponseToRequests' was implemented poorly
                                 Exception e = null;
                                 for (CollapsedRequest<ResponseType, RequestArgumentType> request : shardRequests) {
                                     try {
